@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.contrib import messages
 from django.core.paginator import Paginator
 from django.core.urlresolvers import reverse
 from django.http import HttpResponse, HttpResponseRedirect
@@ -22,20 +23,20 @@ GOOGLE_CONTACTS_URI = "http://www.google.com/m8/feeds/"
 def _import_success(request, results):
     if results.ready():
         if results.status == "DONE":
-            request.user.message_set.create(
-                message = _("%(total)s people with email found, %(imported)s "
-                    "contacts imported.") % results.result
-            )
+            messages.success(request,
+                             _("%(total)s people with email found, %(imported)s "
+                               "contacts imported.") % results.result
+                             )
         elif results.status == "FAILURE":
-            request.user.message_set.create(
-                message = _("There was an error importing your contacts.")
-            )
+            messages.error(request,
+                           _("There was an error importing your contacts.")
+                           )
     else:
-        request.user.message_set.create(
-            message = _("We're still importing your "
-                "contacts.  We'll let you know when they're ready, it "
-                "shouldn't take too long.")
-        )
+        messages.info(request,
+                      _("We're still importing your "
+                        "contacts.  We'll let you know when they're ready, it "
+                        "shouldn't take too long.")
+                      )
         request.session["import_contacts_task_id"] = results.task_id
     return HttpResponseRedirect(request.path)
 
@@ -110,6 +111,7 @@ def import_contacts(request, template_name="contacts_import/import_contacts.html
     else:
         form = VcardImportForm()
     
+
     ctx = {
         "form": form,
         "yahoo_token": request.session.get("yahoo_token"),
