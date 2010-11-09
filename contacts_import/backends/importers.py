@@ -95,10 +95,51 @@ class YahooImporter(BaseImporter):
             raise KeyError(kind)
 
 
+
+
+from gdata.contacts.service import ContactsService
+from gdata.auth import GenerateAuthSubUrl
+
+from django.http import HttpResponseRedirect
+from django.core.urlresolvers import reverse
+
+from contacts_import.settings import RUNNER, CALLBACK
+
 GOOGLE_CONTACTS_URI = "http://www.google.com/m8/feeds/contacts/default/full?alt=json&max-results=1000"
-
-
 class GoogleImporter(BaseImporter):
+    def login_url(self, request):
+        #state = google_get_state(request)
+        #if not state:
+        #next = '%s%s' % (settings.GOOGLE_REDIRECT_BASE_URL, reverse('google_contacts_login'))
+        next = request.build_absolute_uri(reverse('import_google_contacts'))
+        scope = 'http://www.google.com/m8/feeds/'
+        return GenerateAuthSubUrl(next, scope, secure=False, session=True)
+        #else:
+        #    return reverse('google_contacts_logout')
+
+    def login_callback(self, request, redirect_to=None):
+        if "token" in request.GET:
+            token_login = request.GET["token"]
+            gcs = ContactsService()
+            gcs.SetAuthSubToken(token_login)
+            request.session["authsub_token"] = gcs.GetAuthSubToken()
+
+        return HttpResponseRedirect(request.build_absolute_uri())
+
+
+    def import_contacts(self, request):
+        runner_class = RUNNER
+        authsub_token = request.session.pop("authsub_token", None)
+        if authsub_token:
+            runner = runner_class(GoogleImporter,
+                                  user = request.user,
+                                  authsub_token = authsub_token
+                                  )
+            results = runner.import_contacts()
+            from ..views import _import_success
+            return _import_success(request, results)
+
+
     def get_contacts(self, credentials):
         h = httplib2.Http()
         response, content = h.request(GOOGLE_CONTACTS_URI, headers={

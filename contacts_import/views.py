@@ -2,6 +2,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.core.urlresolvers import reverse
+from django.shortcuts import redirect
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render_to_response
 from django.template import RequestContext
@@ -11,13 +12,11 @@ from django.contrib.auth.decorators import login_required
 
 from gdata.contacts.service import ContactsService
 
-from contacts_import.forms import VcardImportForm
-from contacts_import.backends.importers import GoogleImporter, YahooImporter
-from contacts_import.models import TransientContact
-from contacts_import.settings import RUNNER, CALLBACK
+from .forms import VcardImportForm
+from .backends.importers import GoogleImporter, YahooImporter
+from .models import TransientContact
+from .settings import RUNNER, CALLBACK
 
-
-GOOGLE_CONTACTS_URI = "http://www.google.com/m8/feeds/"
 
 
 def _import_success(request, results):
@@ -42,7 +41,32 @@ def _import_success(request, results):
 
 
 @login_required
+def import_google_contacts(request):
+    gi = GoogleImporter()
+    gi.login_callback(request)
+
+    gi.import_contacts(request)
+
+    return redirect('select_contacts')
+
+@login_required
 def import_contacts(request, template_name="contacts_import/import_contacts.html"):
+    gi = GoogleImporter()
+    ctx = {"google_url" : gi.login_url(request)}
+    return render_to_response(template_name, 
+                              RequestContext(request, ctx))
+
+
+@login_required
+def select_contacts(request, template_name="contacts_import/select_contacts.html"):
+    contacts = request.user.imported_contacts.all()
+    context = {'contacts': contacts}
+    return render_to_response(template_name, 
+                              RequestContext(request, context))
+    
+
+@login_required
+def import_contacts_old(request, template_name="contacts_import/import_contacts.html"):
     runner_class = RUNNER
     callback = CALLBACK
     
@@ -123,15 +147,3 @@ def import_contacts(request, template_name="contacts_import/import_contacts.html
     return render_to_response(template_name, RequestContext(request, ctx))
 
 
-def _authsub_url(next):
-    contacts_service = ContactsService()
-    return contacts_service.GenerateAuthSubURL(next, GOOGLE_CONTACTS_URI, False, True)
-
-
-def authsub_login(request, redirect_to=None):
-    if redirect_to is None:
-        redirect_to = reverse("import_contacts")
-    if "token" in request.GET:
-        request.session["authsub_token"] = request.GET["token"]
-        return HttpResponseRedirect(redirect_to)
-    return HttpResponseRedirect(_authsub_url(request.build_absolute_uri()))
