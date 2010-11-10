@@ -16,7 +16,6 @@ else:
 
 
 class BaseImporter(Task):
-    
     def run(self, credentials, persistance):
         status = {
             "imported": 0,
@@ -28,7 +27,6 @@ class BaseImporter(Task):
 
 
 class VcardImporter(BaseImporter):
-    
     def get_contacts(self, credentials):
         for card in vobject.readComponents(credentials["stream"]):
             try:
@@ -37,12 +35,20 @@ class VcardImporter(BaseImporter):
                     "name": card.fn.value
                 }
             except AttributeError:
-                # if a person doesn"t have an email or a name ignore them
+                # if a person doesn't have an email or a name ignore them
                 continue
 
 
-class YahooImporter(BaseImporter):
-    
+class EmailListImporter(BaseImporter):
+    def get_contacts(self, credentials):
+        for email in credentials["stream"]:
+            yield {
+                "email": email,
+                "name": '',
+                }
+
+
+class YahooImporter(BaseImporter):    
     def get_contacts(self, credentials):
         from oauth_access.access import OAuthAccess
         yahoo_token = credentials["yahoo_token"]
@@ -106,16 +112,12 @@ from django.core.urlresolvers import reverse
 from contacts_import.settings import RUNNER, CALLBACK
 
 GOOGLE_CONTACTS_URI = "http://www.google.com/m8/feeds/contacts/default/full?alt=json&max-results=1000"
+
 class GoogleImporter(BaseImporter):
     def login_url(self, request):
-        #state = google_get_state(request)
-        #if not state:
-        #next = '%s%s' % (settings.GOOGLE_REDIRECT_BASE_URL, reverse('google_contacts_login'))
         next = request.build_absolute_uri(reverse('import_google_contacts'))
         scope = 'http://www.google.com/m8/feeds/'
         return GenerateAuthSubUrl(next, scope, secure=False, session=True)
-        #else:
-        #    return reverse('google_contacts_logout')
 
     def login_callback(self, request, redirect_to=None):
         if "token" in request.GET:
@@ -145,8 +147,10 @@ class GoogleImporter(BaseImporter):
         response, content = h.request(GOOGLE_CONTACTS_URI, headers={
             "Authorization": 'AuthSub token="%s"' % credentials["authsub_token"]
         })
+
         if response.status != 200:
             return
+
         results = json.loads(content)
         for person in results["feed"]["entry"]:
             for email in person.get("gd$email", []):

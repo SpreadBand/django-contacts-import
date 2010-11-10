@@ -1,23 +1,19 @@
+from gdata.contacts.service import ContactsService
+
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.core.urlresolvers import reverse
-from django.shortcuts import redirect
 from django.http import HttpResponse, HttpResponseRedirect
-from django.shortcuts import render_to_response
+from django.shortcuts import redirect, render_to_response
 from django.template import RequestContext
 from django.utils.translation import ugettext as _
 
-from django.contrib.auth.decorators import login_required
-
-from gdata.contacts.service import ContactsService
-
-from .forms import VcardImportForm
 from .backends.importers import GoogleImporter, YahooImporter
+from .forms import VcardImportForm, EmailListImportForm
 from .models import TransientContact
 from .settings import RUNNER, CALLBACK
-
-
 
 def _import_success(request, results):
     if results.ready():
@@ -39,9 +35,33 @@ def _import_success(request, results):
         request.session["import_contacts_task_id"] = results.task_id
     return HttpResponseRedirect(request.path)
 
+@login_required
+def import_email_list(request,
+                      template_name="contacts_import/import_email_list.html",
+                      next='select_contacts'):
+    """
+    Given a comma-separated list, import email adresses
+    """
+    email_form = EmailListImportForm(request.POST or None)
+
+    if request.method == 'POST':
+        if email_form.is_valid():
+            results = email_form.save(request.user, runner_class=RUNNER)
+            return _import_success(request, results)
+
+    context = {'email_form': email_form}
+
+    return render_to_response(template_name,
+                              RequestContext(request, context)
+                              )
+                              
+    
 
 @login_required
 def import_google_contacts(request):
+    """
+    Import contacts from a Gmail account
+    """
     gi = GoogleImporter()
     gi.login_callback(request)
 
@@ -51,8 +71,17 @@ def import_google_contacts(request):
 
 @login_required
 def import_contacts(request, template_name="contacts_import/import_contacts.html"):
+    """
+    Generic view that gives access to all backend
+    """
     gi = GoogleImporter()
-    ctx = {"google_url" : gi.login_url(request)}
+
+    email_list_form = EmailListImportForm(request.POST or None)
+
+    ctx = {"google_url" : gi.login_url(request),
+           "email_list_form" : email_list_form
+           }
+
     return render_to_response(template_name, 
                               RequestContext(request, ctx))
 
